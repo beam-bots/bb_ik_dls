@@ -11,3 +11,11 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+
+## [v0.2.0](https://github.com/beam-bots/bb_ik_dls/compare/v0.1.0...v0.2.0) (2025-12-29)
+
+
+
+### Features:
+
+* implement Damped Least Squares IK solver
