@@ -484,4 +484,108 @@ defmodule BB.IK.TestRobots do
       end
     end
   end
+
+  defmodule CollisionArm do
+    @moduledoc """
+    2-DOF arm with collision geometry for testing collision-aware IK.
+
+    Structure:
+    - base_link (with collision sphere at origin)
+      - shoulder (revolute, Y-axis) - lifts arm in XZ plane
+        - upper_arm (0.3m capsule along X)
+          - elbow (revolute, Y-axis) - bends forearm
+            - forearm (0.25m capsule along X)
+              - tip_joint (fixed)
+                - tip
+
+    When the arm folds back (shoulder back + elbow bent), forearm can collide with base.
+    Total reach: 0.55m from shoulder along X axis.
+    """
+    use BB
+    import BB.Unit
+
+    settings do
+      name(:collision_arm)
+    end
+
+    topology do
+      link :base_link do
+        collision do
+          sphere do
+            radius(~u(0.08 meter))
+          end
+        end
+
+        joint :shoulder do
+          type(:revolute)
+
+          axis do
+            roll(~u(-90 degree))
+          end
+
+          limit do
+            lower(~u(-135 degree))
+            upper(~u(135 degree))
+            effort(~u(10 newton_meter))
+            velocity(~u(90 degree_per_second))
+          end
+
+          link :upper_arm do
+            collision do
+              origin do
+                x(~u(0.15 meter))
+              end
+
+              capsule do
+                radius(~u(0.03 meter))
+                height(~u(0.3 meter))
+              end
+            end
+
+            joint :elbow do
+              type(:revolute)
+
+              origin do
+                x(~u(0.3 meter))
+              end
+
+              axis do
+                roll(~u(-90 degree))
+              end
+
+              limit do
+                lower(~u(-150 degree))
+                upper(~u(150 degree))
+                effort(~u(5 newton_meter))
+                velocity(~u(90 degree_per_second))
+              end
+
+              link :forearm do
+                collision do
+                  origin do
+                    x(~u(0.125 meter))
+                  end
+
+                  capsule do
+                    radius(~u(0.025 meter))
+                    height(~u(0.25 meter))
+                  end
+                end
+
+                joint :tip_joint do
+                  type(:fixed)
+
+                  origin do
+                    x(~u(0.25 meter))
+                  end
+
+                  link(:tip)
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
 end
