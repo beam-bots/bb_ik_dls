@@ -5,11 +5,22 @@
 defmodule BB.IK.DLSTest do
   use ExUnit.Case, async: true
 
+  alias BB.Collision
   alias BB.Error.Kinematics.NoDofs
   alias BB.Error.Kinematics.NoSolution
+  alias BB.Error.Kinematics.SelfCollision
   alias BB.Error.Kinematics.UnknownLink
   alias BB.IK.DLS
-  alias BB.IK.TestRobots.{FixedOnlyChain, PrismaticArm, SixDofArm, ThreeLinkArm, TwoLinkArm}
+
+  alias BB.IK.TestRobots.{
+    CollisionArm,
+    FixedOnlyChain,
+    PrismaticArm,
+    SixDofArm,
+    ThreeLinkArm,
+    TwoLinkArm
+  }
+
   alias BB.Math.Quaternion
   alias BB.Math.Transform
   alias BB.Math.Vec3
@@ -303,6 +314,61 @@ defmodule BB.IK.DLSTest do
 
       assert is_float(meta.orientation_residual)
       assert meta.orientation_residual >= 0.0
+    end
+  end
+
+  describe "collision checking" do
+    setup do
+      robot = CollisionArm.robot()
+      positions = %{shoulder: 0.0, elbow: 0.0}
+      {:ok, robot: robot, positions: positions}
+    end
+
+    test "does not check collisions by default", %{robot: robot, positions: positions} do
+      target = Vec3.new(0.4, 0.0, 0.2)
+
+      assert {:ok, _solved_positions, _meta} = DLS.solve(robot, positions, :tip, target)
+    end
+
+    test "succeeds when solution has no self-collision", %{robot: robot, positions: positions} do
+      target = Vec3.new(0.4, 0.0, 0.2)
+
+      assert {:ok, solved_positions, _meta} =
+               DLS.solve(robot, positions, :tip, target, check_collisions: true)
+
+      refute Collision.self_collision?(robot, solved_positions)
+    end
+
+    test "returns SelfCollision error when collision margin triggers detection", %{
+      robot: robot,
+      positions: positions
+    } do
+      target = Vec3.new(0.4, 0.0, 0.2)
+
+      assert {:error, %SelfCollision{} = error} =
+               DLS.solve(robot, positions, :tip, target,
+                 check_collisions: true,
+                 collision_margin: 1.0
+               )
+
+      assert is_atom(error.link_a)
+      assert is_atom(error.link_b)
+      assert is_map(error.joint_positions)
+    end
+
+    test "respects collision_margin option", %{robot: robot, positions: positions} do
+      target = Vec3.new(0.35, 0.0, 0.15)
+
+      assert {:ok, solved_positions, _meta} =
+               DLS.solve(robot, positions, :tip, target, check_collisions: true)
+
+      refute Collision.self_collision?(robot, solved_positions)
+
+      assert {:error, %SelfCollision{}} =
+               DLS.solve(robot, positions, :tip, target,
+                 check_collisions: true,
+                 collision_margin: 0.5
+               )
     end
   end
 end

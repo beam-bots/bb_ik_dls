@@ -55,6 +55,8 @@ defmodule BB.IK.DLS do
   - `:respect_limits` - Whether to clamp to joint limits (default: true)
   - `:exclude_joints` - List of joint names to exclude from IK solving (default: []).
     Useful for excluding end-effectors like grippers that shouldn't affect positioning.
+  - `:check_collisions` - Whether to verify the solution doesn't cause self-collision (default: false)
+  - `:collision_margin` - Safety margin for collision checking in metres (default: 0.0)
 
   ## Algorithm
 
@@ -73,8 +75,10 @@ defmodule BB.IK.DLS do
 
   @behaviour BB.IK.Solver
 
+  alias BB.Collision
   alias BB.Error.Kinematics.NoDofs
   alias BB.Error.Kinematics.NoSolution
+  alias BB.Error.Kinematics.SelfCollision
   alias BB.Error.Kinematics.UnknownLink
   alias BB.IK.DLS.Algorithm
   alias BB.Math.Quaternion
@@ -109,6 +113,7 @@ defmodule BB.IK.DLS do
 
   defp do_solve(robot, positions, target_link, target, joint_names, opts) do
     config = build_config(opts)
+    algorithm_config = build_algorithm_config(config)
     {target_position, orientation_target} = normalize_target(target)
 
     target_orientation =
@@ -121,7 +126,7 @@ defmodule BB.IK.DLS do
            target_position,
            target_orientation,
            joint_names,
-           config
+           algorithm_config
          ) do
       {:ok, solved_positions, iteration_meta} ->
         final_positions =
@@ -132,23 +137,31 @@ defmodule BB.IK.DLS do
           end
 
         merged_positions = Map.merge(positions, final_positions)
-        residual = compute_residual(robot, merged_positions, target_link, target_position)
 
-        orientation_residual =
-          if target_orientation do
-            compute_orientation_residual(robot, merged_positions, target_link, target_orientation)
-          else
-            nil
-          end
+        with :ok <- check_collisions(robot, merged_positions, config) do
+          residual = compute_residual(robot, merged_positions, target_link, target_position)
 
-        meta = %{
-          iterations: iteration_meta.iterations,
-          residual: residual,
-          orientation_residual: orientation_residual,
-          reached: iteration_meta.converged
-        }
+          orientation_residual =
+            if target_orientation do
+              compute_orientation_residual(
+                robot,
+                merged_positions,
+                target_link,
+                target_orientation
+              )
+            else
+              nil
+            end
 
-        {:ok, merged_positions, meta}
+          meta = %{
+            iterations: iteration_meta.iterations,
+            residual: residual,
+            orientation_residual: orientation_residual,
+            reached: iteration_meta.converged
+          }
+
+          {:ok, merged_positions, meta}
+        end
 
       {:error, :max_iterations, iteration_meta} ->
         final_positions =
@@ -204,8 +217,22 @@ defmodule BB.IK.DLS do
       lambda: Keyword.get(opts, :lambda, @default_lambda),
       adaptive_damping: Keyword.get(opts, :adaptive_damping, true),
       step_size: Keyword.get(opts, :step_size, @default_step_size),
-      respect_limits: Keyword.get(opts, :respect_limits, true)
+      respect_limits: Keyword.get(opts, :respect_limits, true),
+      check_collisions: Keyword.get(opts, :check_collisions, false),
+      collision_margin: Keyword.get(opts, :collision_margin, 0.0)
     }
+  end
+
+  defp build_algorithm_config(config) do
+    Map.take(config, [
+      :max_iterations,
+      :tolerance,
+      :orientation_tolerance,
+      :lambda,
+      :adaptive_damping,
+      :step_size,
+      :respect_limits
+    ])
   end
 
   defp extract_chain_joints(robot, target_link, excluded_joints) do
@@ -305,5 +332,22 @@ defmodule BB.IK.DLS do
     current_quat = Transform.get_quaternion(current_transform)
 
     Quaternion.angular_distance(current_quat, target_quaternion)
+  end
+
+  defp check_collisions(_robot, _positions, %{check_collisions: false}), do: :ok
+
+  defp check_collisions(robot, positions, %{check_collisions: true, collision_margin: margin}) do
+    case Collision.detect_self_collisions(robot, positions, margin: margin) do
+      [] ->
+        :ok
+
+      [collision | _] ->
+        {:error,
+         %SelfCollision{
+           link_a: collision.link_a,
+           link_b: collision.link_b,
+           joint_positions: positions
+         }}
+    end
   end
 end
