@@ -34,12 +34,22 @@ defmodule BB.IK.DLS.Motion do
 
   ## In Custom Commands
 
-      def handle_command(%{target: target}, context) do
+      use BB.Command
+
+      @impl BB.Command
+      def handle_command(%{target: target}, context, state) do
         case BB.IK.DLS.Motion.move_to(context, :gripper, target) do
-          {:ok, meta} -> {:ok, %{residual: meta.residual}}
-          {:error, reason, _meta} -> {:error, reason}
+          {:ok, meta} ->
+            {:stop, :normal, %{state | result: %{residual: meta.residual}}}
+
+          {:error, reason, _meta} ->
+            {:stop, :normal, %{state | result: {:error, reason}}}
         end
       end
+
+      @impl BB.Command
+      def result(%{result: {:error, _} = error}), do: error
+      def result(%{result: result}), do: {:ok, result}
   """
 
   alias BB.Command.Context
