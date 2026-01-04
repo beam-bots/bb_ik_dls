@@ -67,7 +67,7 @@ defmodule BB.IK.DLS.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:bb, "~> 0.11"},
+      {:bb, bb_dep("~> 0.12")},
 
       # dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -83,4 +83,13 @@ defmodule BB.IK.DLS.MixProject do
 
   defp elixirc_paths(env) when env in [:dev, :test], do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp bb_dep(default) do
+    case System.get_env("BB_VERSION") do
+      nil -> default
+      "local" -> [path: "../bb", override: true]
+      "main" -> [git: "https://github.com/beam-bots/bb.git", override: true]
+      version -> "~> #{version}"
+    end
+  end
 end
