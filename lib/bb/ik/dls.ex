@@ -142,16 +142,12 @@ defmodule BB.IK.DLS do
           residual = compute_residual(robot, merged_positions, target_link, target_position)
 
           orientation_residual =
-            if target_orientation do
-              compute_orientation_residual(
-                robot,
-                merged_positions,
-                target_link,
-                target_orientation
-              )
-            else
-              nil
-            end
+            maybe_compute_orientation_residual(
+              robot,
+              merged_positions,
+              target_link,
+              target_orientation
+            )
 
           meta = %{
             iterations: iteration_meta.iterations,
@@ -332,6 +328,12 @@ defmodule BB.IK.DLS do
     current_quat = Transform.get_quaternion(current_transform)
 
     Quaternion.angular_distance(current_quat, target_quaternion)
+  end
+
+  defp maybe_compute_orientation_residual(_robot, _positions, _target_link, nil), do: nil
+
+  defp maybe_compute_orientation_residual(robot, positions, target_link, target_orientation) do
+    compute_orientation_residual(robot, positions, target_link, target_orientation)
   end
 
   defp check_collisions(_robot, _positions, %{check_collisions: false}), do: :ok
