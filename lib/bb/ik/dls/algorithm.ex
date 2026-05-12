@@ -26,6 +26,7 @@ defmodule BB.IK.DLS.Algorithm do
   alias BB.Math.Quaternion
   alias BB.Math.Transform
   alias BB.Math.Vec3
+  alias BB.Robot
   alias BB.Robot.Kinematics
 
   @min_lambda 1.0e-6
@@ -97,6 +98,9 @@ defmodule BB.IK.DLS.Algorithm do
         joint_names,
         config
       ) do
+    clamped_initial =
+      maybe_clamp_to_limits(initial_positions, robot, joint_names, config.respect_limits)
+
     state = %State{
       robot: robot,
       target_link: target_link,
@@ -104,7 +108,7 @@ defmodule BB.IK.DLS.Algorithm do
       target_orientation: target_orientation,
       joint_names: joint_names,
       config: config,
-      positions: initial_positions,
+      positions: clamped_initial,
       lambda: config.lambda,
       iteration: 0,
       prev_error_norm: nil
@@ -174,7 +178,11 @@ defmodule BB.IK.DLS.Algorithm do
     jacobian = compute_jacobian(state)
     delta_theta = compute_update(jacobian, error_vector, state.lambda)
     delta_theta = limit_step_size(delta_theta, state.config.step_size)
-    new_positions = apply_update(state.positions, state.joint_names, delta_theta)
+
+    new_positions =
+      state.positions
+      |> apply_update(state.joint_names, delta_theta)
+      |> maybe_clamp_to_limits(state.robot, state.joint_names, state.config.respect_limits)
 
     new_lambda = update_lambda(state, error_norm)
 
@@ -261,6 +269,26 @@ defmodule BB.IK.DLS.Algorithm do
       current = Map.get(acc, joint_name, 0.0)
       Map.put(acc, joint_name, current + delta)
     end)
+  end
+
+  defp maybe_clamp_to_limits(positions, _robot, _joint_names, false), do: positions
+
+  defp maybe_clamp_to_limits(positions, robot, joint_names, true) do
+    Enum.reduce(joint_names, positions, fn joint_name, acc ->
+      joint = Robot.get_joint(robot, joint_name)
+      current = Map.get(acc, joint_name, 0.0)
+      Map.put(acc, joint_name, clamp_to_joint(current, joint))
+    end)
+  end
+
+  defp clamp_to_joint(position, nil), do: position
+  defp clamp_to_joint(position, %{limits: nil}), do: position
+  defp clamp_to_joint(position, %{limits: %{lower: nil, upper: nil}}), do: position
+  defp clamp_to_joint(position, %{limits: %{lower: lower, upper: nil}}), do: max(position, lower)
+  defp clamp_to_joint(position, %{limits: %{lower: nil, upper: upper}}), do: min(position, upper)
+
+  defp clamp_to_joint(position, %{limits: %{lower: lower, upper: upper}}) do
+    position |> max(lower) |> min(upper)
   end
 
   defp adapt_lambda(lambda, prev_error, current_error) do
