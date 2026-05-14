@@ -129,14 +129,7 @@ defmodule BB.IK.DLS do
            algorithm_config
          ) do
       {:ok, solved_positions, iteration_meta} ->
-        final_positions =
-          if config.respect_limits do
-            clamp_to_limits(robot, solved_positions, joint_names)
-          else
-            solved_positions
-          end
-
-        merged_positions = Map.merge(positions, final_positions)
+        merged_positions = Map.merge(positions, solved_positions)
 
         with :ok <- check_collisions(robot, merged_positions, config) do
           residual = compute_residual(robot, merged_positions, target_link, target_position)
@@ -160,14 +153,7 @@ defmodule BB.IK.DLS do
         end
 
       {:error, :max_iterations, iteration_meta} ->
-        final_positions =
-          if config.respect_limits do
-            clamp_to_limits(robot, iteration_meta.positions, joint_names)
-          else
-            iteration_meta.positions
-          end
-
-        merged_positions = Map.merge(positions, final_positions)
+        merged_positions = Map.merge(positions, iteration_meta.positions)
         residual = compute_residual(robot, merged_positions, target_link, target_position)
 
         {:error,
@@ -286,33 +272,6 @@ defmodule BB.IK.DLS do
 
     rotation = Quaternion.from_two_vectors(current_z, target_axis)
     Quaternion.multiply(rotation, current_quat)
-  end
-
-  defp clamp_to_limits(robot, positions, joint_names) do
-    Enum.reduce(joint_names, positions, fn joint_name, acc ->
-      joint = Map.get(robot.joints, joint_name)
-      position = Map.get(acc, joint_name, 0.0)
-
-      clamped =
-        case joint.limits do
-          nil ->
-            position
-
-          %{lower: nil, upper: nil} ->
-            position
-
-          %{lower: lower, upper: nil} ->
-            max(position, lower)
-
-          %{lower: nil, upper: upper} ->
-            min(position, upper)
-
-          %{lower: lower, upper: upper} ->
-            position |> max(lower) |> min(upper)
-        end
-
-      Map.put(acc, joint_name, clamped)
-    end)
   end
 
   defp compute_residual(robot, positions, target_link, target_position) do
