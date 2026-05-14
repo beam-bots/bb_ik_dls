@@ -34,7 +34,7 @@ Add `bb_ik_dls` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bb_ik_dls, "~> 0.3.1"}
+    {:bb_ik_dls, "~> 0.3.2"}
   ]
 end
 ```
