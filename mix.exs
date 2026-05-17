@@ -9,7 +9,7 @@ defmodule BB.IK.DLS.MixProject do
   DLS-based inverse kinematics solver for Beam Bots.
   """
 
-  @version "0.3.2"
+  @version "0.3.3"
 
   def project do
     [
