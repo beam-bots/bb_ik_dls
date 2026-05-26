@@ -28,7 +28,7 @@ defmodule BB.IK.DLS.MixProject do
     ]
   end
 
-  defp dialyzer, do: []
+  defp dialyzer, do: [plt_add_apps: [:mix]]
 
   defp package do
     [
