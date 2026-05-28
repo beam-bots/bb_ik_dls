@@ -11,6 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.4.0](https://github.com/beam-bots/bb_ik_dls/compare/v0.3.3...v0.4.0) (2026-05-28)
+
+
+
+
+### Features:
+
+* add `bb_ik_dls.install` igniter task (#26) by James Harton
+
 ## [v0.3.3](https://github.com/beam-bots/bb_ik_dls/compare/v0.3.2...v0.3.3) (2026-05-17)
 
 
