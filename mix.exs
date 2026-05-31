@@ -51,6 +51,7 @@ defmodule BB.IK.DLS.MixProject do
   defp docs do
     [
       main: "readme",
+      logo: "assets/logo.png",
       extras:
         ["README.md", "CHANGELOG.md"]
         |> Enum.concat(Path.wildcard("documentation/**/*.{md,livemd,cheatmd}")),
