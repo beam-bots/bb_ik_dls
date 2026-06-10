@@ -89,7 +89,7 @@ Tests use robot fixtures from `test/support/test_robots.ex` (compiled via `elixi
 
 ## Dependencies
 
-- `bb ~> 0.10` - Core framework (provides `BB.IK.Solver` behaviour, `BB.Robot`, `BB.Math.*`)
+- `bb ~> 0.16` - Core framework (provides `BB.IK.Solver` behaviour, `BB.Robot`, `BB.Math.*`)
 - `nx` - Numerical computing (via bb)
 
 ## When Making Changes
