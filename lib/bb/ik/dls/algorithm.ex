@@ -22,7 +22,6 @@ defmodule BB.IK.DLS.Algorithm do
 
   import Nx.Defn
 
-  alias BB.IK.DLS.Jacobian
   alias BB.Math.Quaternion
   alias BB.Math.Transform
   alias BB.Math.Vec3
@@ -196,16 +195,16 @@ defmodule BB.IK.DLS.Algorithm do
   end
 
   defp compute_jacobian(%State{target_orientation: nil} = state) do
-    Jacobian.compute(state.robot, state.positions, state.target_link, state.joint_names)
-  end
-
-  defp compute_jacobian(%State{} = state) do
-    Jacobian.compute_with_orientation(
+    Kinematics.position_jacobian(
       state.robot,
       state.positions,
       state.target_link,
       state.joint_names
     )
+  end
+
+  defp compute_jacobian(%State{} = state) do
+    Kinematics.jacobian(state.robot, state.positions, state.target_link, state.joint_names)
   end
 
   defp update_lambda(%State{config: %{adaptive_damping: false}} = state, _error_norm) do
