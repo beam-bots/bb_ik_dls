@@ -21,7 +21,6 @@ lib/bb/ik/
 ├── dls.ex           # Main module, BB.IK.Solver implementation
 └── dls/
     ├── algorithm.ex # Core DLS iteration loop with Nx.Defn
-    ├── jacobian.ex  # Numerical Jacobian computation
     ├── motion.ex    # BB.Motion convenience wrappers
     └── tracker.ex   # GenServer for continuous tracking
 ```
@@ -31,8 +30,7 @@ lib/bb/ik/
 | Module | Purpose |
 |--------|---------|
 | `BB.IK.DLS` | Main entry point. Implements `BB.IK.Solver` behaviour. Provides `solve/5` and `solve_and_update/5` |
-| `BB.IK.DLS.Algorithm` | Core iteration using damped pseudoinverse. Contains `Nx.Defn` for performance |
-| `BB.IK.DLS.Jacobian` | Computes numerical Jacobian via finite differences. Works with any kinematic chain |
+| `BB.IK.DLS.Algorithm` | Core iteration using BB's analytical Jacobians and an Nx damped pseudoinverse update |
 | `BB.IK.DLS.Motion` | Wraps `BB.Motion` with DLS pre-configured. Convenience API for `move_to`, `solve`, and multi-target operations |
 | `BB.IK.DLS.Tracker` | GenServer for continuous position tracking at configurable update rates |
 
@@ -67,7 +65,7 @@ Solver returns structured errors from `BB.Error.Kinematics`:
 
 ### Nx Usage
 
-The `Algorithm` module uses `Nx.Defn` for the core computation:
+The `Algorithm` module uses `Nx.Defn` for the damped pseudoinverse update:
 ```elixir
 defn compute_update(jacobian, error, lambda) do
   jjt = Nx.dot(jacobian, Nx.transpose(jacobian))
@@ -89,13 +87,13 @@ Tests use robot fixtures from `test/support/test_robots.ex` (compiled via `elixi
 
 ## Dependencies
 
-- `bb ~> 0.16` - Core framework (provides `BB.IK.Solver` behaviour, `BB.Robot`, `BB.Math.*`)
+- `bb ~> 0.22` - Core framework (provides `BB.IK.Solver`, `BB.Robot`, and analytical Jacobians)
 - `nx` - Numerical computing (via bb)
 
 ## When Making Changes
 
 1. Run `mix check --no-retry` after any changes
-2. Jacobian computation uses finite differences with ε = 1.0e-6
+2. Position-only solves use `BB.Robot.Kinematics.position_jacobian/4`; orientation-constrained solves use `BB.Robot.Kinematics.jacobian/4`
 3. Adaptive damping adjusts λ by ×0.9 on error reduction, ×1.5 on increase
 4. Lambda is clamped to [1.0e-6, 100.0]
 5. The `Tracker` GenServer uses `:direct` delivery by default for low latency
