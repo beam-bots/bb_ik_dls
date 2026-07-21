@@ -22,10 +22,10 @@ DLS computes the joint angles needed to position an end-effector at a target loc
 ## Features
 
 - **Position and orientation solving** - supports position-only, quaternion, and axis-direction constraints
-- **Numerical Jacobian** - works with any kinematic chain without analytical derivation
+- **BB core analytical Jacobians** - uses `BB.Robot.Kinematics.position_jacobian/4` for position-only solves and `BB.Robot.Kinematics.jacobian/4` for orientation-constrained solves
 - **Adaptive damping** - automatically adjusts damping factor based on error reduction
 - **Joint limit clamping** - respects configured joint limits
-- **Nx tensor computation** - efficient numerical operations via Nx
+- **Nx damped updates** - computes damped pseudoinverse joint updates with Nx
 - **Best-effort results** - returns closest solution even on failure
 - **Continuous tracking** - GenServer for real-time target following
 
@@ -144,6 +144,11 @@ where:
 - **e** is the pose error vector
 - **λ** is the damping factor
 - **Δθ** is the joint update
+
+For position-only targets, **J** comes from `BB.Robot.Kinematics.position_jacobian/4`;
+for orientation-constrained targets, it comes from `BB.Robot.Kinematics.jacobian/4`.
+Both are analytical Jacobians provided by BB core. DLS uses Nx for the damped
+pseudoinverse update.
 
 The damping factor prevents instability when J Jᵀ is near-singular (at kinematic singularities).
 

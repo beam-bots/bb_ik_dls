@@ -14,10 +14,10 @@ defmodule BB.IK.DLS do
 
   - Works with `BB.Robot.State` or plain position maps
   - Position and orientation solving (quaternion or axis constraints)
-  - Numerical Jacobian computation (works with any kinematic chain)
+  - Analytical Jacobians from `BB.Robot.Kinematics`
   - Adaptive damping for improved convergence
   - Respects joint limits by clamping solved values
-  - Uses Nx tensors for efficient computation
+  - Uses Nx tensors for damped pseudoinverse updates
   - Returns best-effort positions even on failure
 
   ## Usage
@@ -65,6 +65,10 @@ defmodule BB.IK.DLS do
       Δθ = J^T (J J^T + λ²I)^(-1) e
 
   where J is the Jacobian, e is the pose error, and λ is the damping factor.
+  Position-only solves obtain J from `BB.Robot.Kinematics.position_jacobian/4`;
+  orientation-constrained solves use `BB.Robot.Kinematics.jacobian/4`. Both are
+  analytical Jacobians provided by BB core, while the damped update is computed
+  with Nx.
   The damping prevents instability when J J^T is near-singular.
 
   ## Comparison with FABRIK
