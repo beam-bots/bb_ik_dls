@@ -11,6 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.4.2](https://github.com/beam-bots/bb_ik_dls/compare/v0.4.1...v0.4.2) (2026-08-03)
+
+
+
+
+### Improvements:
+
+* drive the tracking loop from `BB.Loop` (#73) by James Harton
+
 ## [v0.4.1](https://github.com/beam-bots/bb_ik_dls/compare/v0.4.0...v0.4.1) (2026-06-26)
 
 
