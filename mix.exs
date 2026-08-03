@@ -69,7 +69,7 @@ defmodule BB.IK.DLS.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:bb, bb_dep("~> 0.22")},
+      {:bb, bb_dep("~> 0.26")},
 
       # dev/test
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
