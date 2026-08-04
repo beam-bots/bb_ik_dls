@@ -83,7 +83,6 @@ defmodule BB.IK.DLS do
   alias BB.Error.Kinematics.NoDofs
   alias BB.Error.Kinematics.NoSolution
   alias BB.Error.Kinematics.SelfCollision
-  alias BB.Error.Kinematics.UnknownLink
   alias BB.IK.DLS.Algorithm
   alias BB.Math.Quaternion
   alias BB.Math.Transform
@@ -98,20 +97,22 @@ defmodule BB.IK.DLS do
   @default_step_size 0.1
 
   @impl true
-  @spec solve(Robot.t(), State.t() | map(), atom(), BB.IK.Solver.target(), keyword()) ::
+  @spec solve(Robot.t(), State.t() | map(), atom(), atom(), BB.IK.Solver.target(), keyword()) ::
           BB.IK.Solver.solve_result()
-  def solve(robot, state_or_positions, target_link, target, opts \\ [])
+  def solve(robot, state_or_configurations, source_link, target_link, target, opts \\ [])
 
-  def solve(%Robot{} = robot, %State{} = state, target_link, target, opts) do
-    positions = State.get_all_positions(state)
-    solve(robot, positions, target_link, target, opts)
+  def solve(%Robot{} = robot, %State{} = state, source_link, target_link, target, opts) do
+    configurations = State.get_all_configurations(state)
+    solve(robot, configurations, source_link, target_link, target, opts)
   end
 
-  def solve(%Robot{} = robot, positions, target_link, target, opts) when is_map(positions) do
+  def solve(%Robot{} = robot, configurations, source_link, target_link, target, opts)
+      when is_map(configurations) do
     excluded_joints = Keyword.get(opts, :exclude_joints, [])
 
-    with {:ok, joint_names} <- extract_chain_joints(robot, target_link, excluded_joints) do
-      do_solve(robot, positions, target_link, target, joint_names, opts)
+    with {:ok, joint_names} <-
+           extract_chain_joints(robot, source_link, target_link, excluded_joints) do
+      do_solve(robot, configurations, target_link, target, joint_names, opts)
     end
   end
 
@@ -161,33 +162,46 @@ defmodule BB.IK.DLS do
         residual = compute_residual(robot, merged_positions, target_link, target_position)
 
         {:error,
-         %NoSolution{
+         NoSolution.exception(
            target_link: target_link,
            target_pose: target,
            iterations: iteration_meta.iterations,
            residual: residual,
            positions: merged_positions
-         }}
+         )}
     end
   end
 
   @doc """
   Solve IK and update the state in-place.
 
-  Convenience function that calls `solve/5` and applies the result
+  Convenience function that calls `solve/6` and applies the result
   to the given `BB.Robot.State`.
 
   ## Returns
 
-  Same as `solve/5`, but on success the state's ETS table is updated.
+  Same as `solve/6`, but on success the state's ETS table is updated.
   """
-  @spec solve_and_update(Robot.t(), State.t(), atom(), BB.IK.Solver.target(), keyword()) ::
-          BB.IK.Solver.solve_result()
-  def solve_and_update(%Robot{} = robot, %State{} = state, target_link, target, opts \\ []) do
-    case solve(robot, state, target_link, target, opts) do
-      {:ok, positions, meta} ->
-        State.set_positions(state, positions)
-        {:ok, positions, meta}
+  @spec solve_and_update(
+          Robot.t(),
+          State.t(),
+          atom(),
+          atom(),
+          BB.IK.Solver.target(),
+          keyword()
+        ) :: BB.IK.Solver.solve_result()
+  def solve_and_update(
+        %Robot{} = robot,
+        %State{} = state,
+        source_link,
+        target_link,
+        target,
+        opts \\ []
+      ) do
+    case solve(robot, state, source_link, target_link, target, opts) do
+      {:ok, configurations, meta} ->
+        State.set_configurations(state, configurations)
+        {:ok, configurations, meta}
 
       {:error, _error} = error ->
         error
@@ -221,10 +235,11 @@ defmodule BB.IK.DLS do
     ])
   end
 
-  defp extract_chain_joints(robot, target_link, excluded_joints) do
-    case Robot.path_to(robot, target_link) do
-      nil -> {:error, %UnknownLink{target_link: target_link}}
-      path -> filter_movable_joints(robot, path, target_link, excluded_joints)
+  # `path_between/3` diagnoses an unknown source, an unknown target and a
+  # misordered pair itself, so there is no `nil` left to translate here.
+  defp extract_chain_joints(robot, source_link, target_link, excluded_joints) do
+    with {:ok, path} <- Robot.path_between(robot, source_link, target_link) do
+      filter_movable_joints(robot, path, target_link, excluded_joints)
     end
   end
 
@@ -232,7 +247,7 @@ defmodule BB.IK.DLS do
     joint_names = Enum.filter(path, &movable_joint?(robot, &1, excluded_joints))
 
     if Enum.empty?(joint_names) do
-      {:error, %NoDofs{target_link: target_link}}
+      {:error, NoDofs.exception(target_link: target_link)}
     else
       {:ok, joint_names}
     end

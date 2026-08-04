@@ -24,6 +24,7 @@ defmodule BB.IK.DLS.Algorithm do
 
   alias BB.Math.Quaternion
   alias BB.Math.Transform
+  alias BB.Math.Transform2D
   alias BB.Math.Vec3
   alias BB.Robot
   alias BB.Robot.Kinematics
@@ -180,7 +181,7 @@ defmodule BB.IK.DLS.Algorithm do
 
     new_positions =
       state.positions
-      |> apply_update(state.joint_names, delta_theta)
+      |> then(&apply_update(state.robot, &1, state.joint_names, delta_theta))
       |> maybe_clamp_to_limits(state.robot, state.joint_names, state.config.respect_limits)
 
     new_lambda = update_lambda(state, error_norm)
@@ -259,28 +260,91 @@ defmodule BB.IK.DLS.Algorithm do
     end
   end
 
-  defp apply_update(positions, joint_names, delta_theta) do
-    delta_list = Nx.to_flat_list(delta_theta)
-
-    joint_names
-    |> Enum.zip(delta_list)
-    |> Enum.reduce(positions, fn {joint_name, delta}, acc ->
-      current = Map.get(acc, joint_name, 0.0)
-      Map.put(acc, joint_name, current + delta)
+  # Jacobian width is the sum of degrees of freedom along the chain, so the delta
+  # has one entry per *column* rather than per joint. `jacobian_columns/2` says
+  # which joint and which degree of freedom each column belongs to; grouping by
+  # joint lets a multi-DoF joint's components be applied as one rigid motion
+  # rather than several.
+  defp apply_update(robot, configurations, joint_names, delta_theta) do
+    robot
+    |> Kinematics.jacobian_columns(joint_names)
+    |> Enum.zip(Nx.to_flat_list(delta_theta))
+    |> Enum.group_by(fn {{joint_name, _dof}, _delta} -> joint_name end, fn {{_name, dof}, delta} ->
+      {dof, delta}
     end)
+    |> Enum.reduce(configurations, fn {joint_name, deltas}, acc ->
+      {:ok, joint} = Robot.get_joint(robot, joint_name)
+      Map.put(acc, joint_name, advance(joint, Map.get(acc, joint_name), deltas))
+    end)
+  end
+
+  # The perturbation is local to the joint, which is the frame the Jacobian
+  # column was taken in, so it composes on the right.
+  defp advance(%{type: :planar}, configuration, deltas) do
+    lookup = Map.new(deltas)
+
+    Transform2D.compose(
+      configuration || Transform2D.identity(),
+      Transform2D.new(
+        Map.get(lookup, 0, 0.0),
+        Map.get(lookup, 1, 0.0),
+        Map.get(lookup, 2, 0.0)
+      )
+    )
+  end
+
+  defp advance(%{type: :floating}, configuration, deltas) do
+    lookup = Map.new(deltas)
+    current = configuration || Transform.identity()
+
+    translation =
+      Vec3.new(Map.get(lookup, 0, 0.0), Map.get(lookup, 1, 0.0), Map.get(lookup, 2, 0.0))
+
+    rotation =
+      Vec3.new(Map.get(lookup, 3, 0.0), Map.get(lookup, 4, 0.0), Map.get(lookup, 5, 0.0))
+
+    Transform.compose(
+      current,
+      Transform.compose(Transform.translation(translation), rotation_from_vector(rotation))
+    )
+  end
+
+  defp advance(_joint, configuration, deltas) do
+    {_dof, delta} = hd(deltas)
+    (configuration || 0.0) + delta
+  end
+
+  # A rotation vector's magnitude is its angle and its direction its axis. Near
+  # zero there is no well-defined axis, and no rotation to apply either.
+  defp rotation_from_vector(vector) do
+    angle = Vec3.magnitude(vector)
+
+    if angle < 1.0e-12 do
+      Transform.identity()
+    else
+      Transform.from_axis_angle(Vec3.normalise(vector), angle)
+    end
   end
 
   defp maybe_clamp_to_limits(positions, _robot, _joint_names, false), do: positions
 
-  defp maybe_clamp_to_limits(positions, robot, joint_names, true) do
-    Enum.reduce(joint_names, positions, fn joint_name, acc ->
-      joint = Robot.get_joint(robot, joint_name)
-      current = Map.get(acc, joint_name, 0.0)
-      Map.put(acc, joint_name, clamp_to_joint(current, joint))
+  defp maybe_clamp_to_limits(configurations, robot, joint_names, true) do
+    Enum.reduce(joint_names, configurations, fn joint_name, acc ->
+      case Robot.get_joint(robot, joint_name) do
+        {:ok, %{type: type}} when type in [:planar, :floating] ->
+          acc
+
+        {:ok, joint} ->
+          Map.put(acc, joint_name, clamp_to_joint(Map.get(acc, joint_name, 0.0), joint))
+
+        {:error, _} ->
+          acc
+      end
     end)
   end
 
-  defp clamp_to_joint(position, nil), do: position
+  # No `nil` clause: `Robot.get_joint/2` returns a result tuple now, so a missing
+  # joint is handled by the caller and never reaches here as `nil`.
   defp clamp_to_joint(position, %{limits: nil}), do: position
   defp clamp_to_joint(position, %{limits: %{lower: nil, upper: nil}}), do: position
   defp clamp_to_joint(position, %{limits: %{lower: lower, upper: nil}}), do: max(position, lower)

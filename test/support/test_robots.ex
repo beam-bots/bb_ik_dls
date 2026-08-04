@@ -7,6 +7,151 @@ defmodule BB.IK.TestRobots do
   Test robot definitions for IK solver testing.
   """
 
+  defmodule PlanarBaseArm do
+    @moduledoc """
+    A 2-DOF arm on a planar base, for solving chains that contain a multi-DoF joint.
+
+    Structure:
+    - odom
+      - base (planar, Z surface normal) — three degrees of freedom
+        - base_link
+          - shoulder_joint (revolute, Z-axis)
+            - link1
+              - elbow_joint (revolute, Z-axis, 0.25m out)
+                - link2
+                  - tip_joint (fixed, 0.25m offset)
+                    - tip
+
+    The arm alone reaches 0.5m from the base, so a target further out is only
+    reachable by driving the base as well — which is what makes this a test of the
+    planar joint rather than of the arm. Two revolute joints rather than one, so
+    the arm's own workspace is a disc rather than a circle and a chain scoped below
+    the base is still a solvable problem.
+    """
+    use BB
+    import BB.Unit
+
+    settings do
+      name(:planar_base_arm)
+    end
+
+    topology do
+      link :odom do
+        joint :base do
+          type(:planar)
+
+          axis do
+          end
+
+          link :base_link do
+            joint :shoulder_joint do
+              type(:revolute)
+
+              axis do
+              end
+
+              limit do
+                lower(~u(-180 degree))
+                upper(~u(180 degree))
+                effort(~u(10 newton_meter))
+                velocity(~u(90 degree_per_second))
+              end
+
+              link :link1 do
+                joint :elbow_joint do
+                  type(:revolute)
+
+                  origin do
+                    x(~u(0.25 meter))
+                  end
+
+                  axis do
+                  end
+
+                  limit do
+                    lower(~u(-135 degree))
+                    upper(~u(135 degree))
+                    effort(~u(5 newton_meter))
+                    velocity(~u(90 degree_per_second))
+                  end
+
+                  link :link2 do
+                    joint :tip_joint do
+                      type(:fixed)
+
+                      origin do
+                        x(~u(0.25 meter))
+                      end
+
+                      link(:tip)
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  defmodule FloatingBaseArm do
+    @moduledoc """
+    A 1-DOF gimbal on a fully free base, for solving a chain with six extra degrees
+    of freedom.
+
+    Structure:
+    - world
+      - base (floating) — six degrees of freedom
+        - airframe
+          - gimbal (revolute, X-axis)
+            - camera (0.1m offset)
+    """
+    use BB
+    import BB.Unit
+
+    settings do
+      name(:floating_base_arm)
+    end
+
+    topology do
+      link :world do
+        joint :base do
+          type(:floating)
+
+          link :airframe do
+            joint :gimbal do
+              type(:revolute)
+
+              axis do
+                roll(~u(-90 degree))
+              end
+
+              limit do
+                lower(~u(-90 degree))
+                upper(~u(90 degree))
+                effort(~u(2 newton_meter))
+                velocity(~u(180 degree_per_second))
+              end
+
+              link :camera do
+                joint :lens_joint do
+                  type(:fixed)
+
+                  origin do
+                    x(~u(0.1 meter))
+                  end
+
+                  link(:lens)
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
   defmodule TwoLinkArm do
     @moduledoc """
     Simple 2-DOF planar arm for basic IK testing.
