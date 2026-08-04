@@ -23,13 +23,25 @@ this file covers only what's specific to the solver.
 3. **Solver options are an untyped keyword list with DLS-specific defaults.**
    There is no schema, and defaults differ from other solvers — don't assume a
    value carries over from `bb_ik_fabrik`.
+4. **DLS solves every joint type, including multi-DoF ones.** A damped
+   pseudo-inverse is dimension-agnostic, so a `:planar` joint's three degrees of
+   freedom and a `:floating` joint's six need no special case. This is the reason
+   to reach for DLS over `bb_ik_fabrik` on a robot with a mobile or floating base:
+   FABRIK refuses such chains outright.
+5. **Every solve states both ends of its chain.** `:source_link` is required and
+   has no default. Pass `BB.Robot.root_link(robot)` when you do mean the whole
+   tree, and a lower link when you don't — starting at the root on a robot whose
+   base floats drags six degrees of freedom into a problem that may not want them.
 
 ## Using it
 
 Ad-hoc, through `BB.Motion`:
 
 ```elixir
-BB.Motion.move_to(MyRobot.Robot, :gripper, {0.4, 0.2, 0.1}, solver: BB.IK.DLS)
+BB.Motion.move_to(MyRobot.Robot, :gripper, {0.4, 0.2, 0.1},
+  source_link: :base_link,
+  solver: BB.IK.DLS
+)
 ```
 
 Declaratively, as a `BB.Command.MoveTo` entry in the DSL:
@@ -96,7 +108,7 @@ BB.IK.DLS.Tracker.update_target(pid, {0.35, 0.25, 0.15})
   `solver: BB.IK.DLS` per call.
 - **Don't carry FABRIK's defaults over.** DLS tunes stability with `:lambda`
   and `:adaptive_damping`; its `:max_iterations` default is `100`, not `50`.
-- **Don't pass the robot module to `solve/5`.** It wants the `%BB.Robot{}`
+- **Don't pass the robot module to `solve/6`.** It wants the `%BB.Robot{}`
   struct plus a state/positions map.
 
 ## Further reading

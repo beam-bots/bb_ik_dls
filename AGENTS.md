@@ -29,7 +29,7 @@ lib/bb/ik/
 
 | Module | Purpose |
 |--------|---------|
-| `BB.IK.DLS` | Main entry point. Implements `BB.IK.Solver` behaviour. Provides `solve/5` and `solve_and_update/5` |
+| `BB.IK.DLS` | Main entry point. Implements `BB.IK.Solver` behaviour. Provides `solve/6` and `solve_and_update/6` |
 | `BB.IK.DLS.Algorithm` | Core iteration using BB's analytical Jacobians and an Nx damped pseudoinverse update |
 | `BB.IK.DLS.Motion` | Wraps `BB.Motion` with DLS pre-configured. Convenience API for `move_to`, `solve`, and multi-target operations |
 | `BB.IK.DLS.Tracker` | GenServer for continuous position tracking at configurable update rates |
