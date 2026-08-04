@@ -18,7 +18,9 @@ defmodule BB.IK.DLS.Motion do
       end
 
       # Just solve without moving (for validation)
-      case BB.IK.DLS.Motion.solve(MyRobot, :gripper, {0.3, 0.2, 0.1}) do
+      case BB.IK.DLS.Motion.solve(MyRobot, :gripper, {0.3, 0.2, 0.1},
+             source_link: :base_link
+           ) do
         {:ok, positions, meta} -> IO.inspect(positions)
         {:error, reason, _meta} -> IO.puts("Unreachable: \#{reason}")
       end
@@ -92,6 +94,8 @@ defmodule BB.IK.DLS.Motion do
   - `:respect_limits` - Whether to clamp to joint limits (default: true)
 
   Motion:
+  - `:source_link` - Link the chain starts at (**required**, no default). Pass
+    `BB.Robot.root_link(robot)` if you mean the whole tree
   - `:delivery` - How to send actuator commands: `:pubsub` (default), `:direct`, or `:sync`
 
   ## Returns
@@ -101,9 +105,12 @@ defmodule BB.IK.DLS.Motion do
 
   ## Examples
 
-      BB.IK.DLS.Motion.move_to(MyRobot, :gripper, {0.3, 0.2, 0.1})
+      BB.IK.DLS.Motion.move_to(MyRobot, :gripper, {0.3, 0.2, 0.1},
+        source_link: :base_link
+      )
 
       BB.IK.DLS.Motion.move_to(context, :gripper, target,
+        source_link: :base_link,
         delivery: :direct,
         max_iterations: 200,
         tolerance: 0.001
@@ -130,6 +137,7 @@ defmodule BB.IK.DLS.Motion do
   - `:adaptive_damping` - Adapt lambda based on error (default: true)
   - `:step_size` - Max joint update per iteration (default: 0.1)
   - `:respect_limits` - Whether to clamp to joint limits (default: true)
+  - `:source_link` - Link the chain starts at (**required**, no default)
 
   ## Returns
 
@@ -138,7 +146,7 @@ defmodule BB.IK.DLS.Motion do
 
   ## Examples
 
-      case BB.IK.DLS.Motion.solve(MyRobot, :gripper, target) do
+      case BB.IK.DLS.Motion.solve(MyRobot, :gripper, target, source_link: :base_link) do
         {:ok, positions, %{reached: true}} ->
           IO.puts("Target reachable")
           IO.inspect(positions)
@@ -227,6 +235,10 @@ defmodule BB.IK.DLS.Motion do
   end
 
   defp build_motion_opts(opts) do
+    # Required, with no default: the root is right for a fixed-base arm and
+    # silently wrong for a robot whose base floats.
+    source_link = Keyword.fetch!(opts, :source_link)
+
     dls_opts =
       @default_opts
       |> Keyword.merge(
@@ -246,5 +258,6 @@ defmodule BB.IK.DLS.Motion do
     |> Keyword.take([:delivery])
     |> Keyword.merge(dls_opts)
     |> Keyword.put(:solver, DLS)
+    |> Keyword.put(:source_link, source_link)
   end
 end

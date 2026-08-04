@@ -8,6 +8,7 @@ defmodule BB.IK.DLSTest do
   alias BB.Collision
   alias BB.Error.Kinematics.NoDofs
   alias BB.Error.Kinematics.NoSolution
+  alias BB.Error.Kinematics.NotAnAncestor
   alias BB.Error.Kinematics.SelfCollision
   alias BB.Error.Kinematics.UnknownLink
   alias BB.IK.DLS
@@ -15,6 +16,8 @@ defmodule BB.IK.DLSTest do
   alias BB.IK.TestRobots.{
     CollisionArm,
     FixedOnlyChain,
+    FloatingBaseArm,
+    PlanarBaseArm,
     PrismaticArm,
     SixDofArm,
     ThreeLinkArm,
@@ -23,6 +26,7 @@ defmodule BB.IK.DLSTest do
 
   alias BB.Math.Quaternion
   alias BB.Math.Transform
+  alias BB.Math.Transform2D
   alias BB.Math.Vec3
   alias BB.Robot.Kinematics
 
@@ -36,7 +40,7 @@ defmodule BB.IK.DLSTest do
     test "solves for reachable target", %{robot: robot, positions: positions} do
       target = Vec3.new(0.3, 0.2, 0.0)
 
-      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
 
       assert is_map(solved_positions)
       assert Map.has_key?(solved_positions, :shoulder_joint)
@@ -54,7 +58,7 @@ defmodule BB.IK.DLSTest do
     test "solves for target at extended reach", %{robot: robot, positions: positions} do
       target = Vec3.new(0.45, 0.1, 0.0)
 
-      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
 
       assert meta.residual < 0.01
       assert meta.reached == true
@@ -67,18 +71,38 @@ defmodule BB.IK.DLSTest do
     test "returns error for unreachable target", %{robot: robot, positions: positions} do
       target = Vec3.new(1.0, 0.0, 0.0)
 
-      assert {:error, %NoSolution{} = error} = DLS.solve(robot, positions, :tip, target)
+      assert {:error, %NoSolution{} = error} =
+               DLS.solve(robot, positions, :base_link, :tip, target)
 
       assert error.target_link == :tip
       assert is_map(error.positions)
       assert error.residual > 0.4
     end
 
-    test "returns error for unknown link", %{robot: robot, positions: positions} do
+    test "returns error for unknown target link", %{robot: robot, positions: positions} do
       target = Vec3.new(0.3, 0.2, 0.0)
 
-      assert {:error, %UnknownLink{target_link: :nonexistent}} =
-               DLS.solve(robot, positions, :nonexistent, target)
+      assert {:error, %UnknownLink{link: :nonexistent, role: :target}} =
+               DLS.solve(robot, positions, :base_link, :nonexistent, target)
+    end
+
+    test "returns error for unknown source link", %{robot: robot, positions: positions} do
+      target = Vec3.new(0.3, 0.2, 0.0)
+
+      assert {:error, %UnknownLink{link: :nonexistent, role: :source}} =
+               DLS.solve(robot, positions, :nonexistent, :tip, target)
+    end
+
+    # The chain is scoped by both ends now, so asking for them the wrong way round
+    # is a distinct failure that names the link the caller should have passed.
+    test "returns error when the source is below the target", %{
+      robot: robot,
+      positions: positions
+    } do
+      target = Vec3.new(0.3, 0.2, 0.0)
+
+      assert {:error, %NotAnAncestor{common_ancestor: :base_link}} =
+               DLS.solve(robot, positions, :tip, :base_link, target)
     end
   end
 
@@ -89,7 +113,7 @@ defmodule BB.IK.DLSTest do
       target = Vec3.new(0.0, 0.0, 0.1)
 
       assert {:error, %NoDofs{target_link: :end_link}} =
-               DLS.solve(robot, positions, :end_link, target)
+               DLS.solve(robot, positions, :base_link, :end_link, target)
     end
   end
 
@@ -103,7 +127,7 @@ defmodule BB.IK.DLSTest do
     test "solves for 3D target", %{robot: robot, positions: positions} do
       target = Vec3.new(0.15, 0.15, 0.3)
 
-      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
 
       assert meta.residual < 0.02
       assert meta.reached == true
@@ -122,7 +146,7 @@ defmodule BB.IK.DLSTest do
 
       target = Vec3.new(0.4, 0.1, 0.0)
 
-      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
 
       assert meta.residual < 0.02
       assert Map.has_key?(solved_positions, :slide_joint)
@@ -135,7 +159,7 @@ defmodule BB.IK.DLSTest do
       positions = %{shoulder_joint: 0.0, elbow_joint: 0.0}
       target = Vec3.new(0.3, 0.2, 0.0)
 
-      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
       assert meta.orientation_residual == nil
     end
 
@@ -158,7 +182,7 @@ defmodule BB.IK.DLSTest do
           Quaternion.identity()
         )
 
-      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
       assert is_float(meta.orientation_residual)
     end
 
@@ -177,7 +201,7 @@ defmodule BB.IK.DLSTest do
 
       target = {Vec3.new(0.2, 0.1, 0.4), {:quaternion, Quaternion.identity()}}
 
-      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
       assert is_float(meta.orientation_residual)
     end
 
@@ -196,7 +220,7 @@ defmodule BB.IK.DLSTest do
 
       target = {Vec3.new(0.2, 0.1, 0.4), {:axis, Vec3.unit_z()}}
 
-      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
       assert is_float(meta.orientation_residual)
     end
   end
@@ -211,25 +235,25 @@ defmodule BB.IK.DLSTest do
 
     test "respects max_iterations", %{robot: robot, positions: positions, target: target} do
       assert {:error, %NoSolution{iterations: 5}} =
-               DLS.solve(robot, positions, :tip, target, max_iterations: 5)
+               DLS.solve(robot, positions, :base_link, :tip, target, max_iterations: 5)
     end
 
     test "respects tolerance", %{robot: robot, positions: positions, target: target} do
       assert {:ok, _positions, meta} =
-               DLS.solve(robot, positions, :tip, target, tolerance: 0.1)
+               DLS.solve(robot, positions, :base_link, :tip, target, tolerance: 0.1)
 
       assert meta.residual < 0.1
     end
 
     test "respects lambda option", %{robot: robot, positions: positions, target: target} do
       assert {:ok, _positions, _meta} =
-               DLS.solve(robot, positions, :tip, target, lambda: 1.0)
+               DLS.solve(robot, positions, :base_link, :tip, target, lambda: 1.0)
     end
 
     test "respects adaptive_damping option", %{robot: robot, positions: positions, target: target} do
       # Without adaptive damping, may need more iterations or higher tolerance
       assert {:ok, _positions, _meta} =
-               DLS.solve(robot, positions, :tip, target,
+               DLS.solve(robot, positions, :base_link, :tip, target,
                  adaptive_damping: false,
                  max_iterations: 200,
                  tolerance: 0.001
@@ -238,7 +262,7 @@ defmodule BB.IK.DLSTest do
 
     test "respects step_size option", %{robot: robot, positions: positions, target: target} do
       assert {:ok, _positions, _meta} =
-               DLS.solve(robot, positions, :tip, target, step_size: 0.05)
+               DLS.solve(robot, positions, :base_link, :tip, target, step_size: 0.05)
     end
   end
 
@@ -250,7 +274,7 @@ defmodule BB.IK.DLSTest do
       target = Vec3.new(-0.3, 0.2, 0.0)
 
       assert {:ok, solved_positions, _meta} =
-               DLS.solve(robot, positions, :tip, target, respect_limits: true)
+               DLS.solve(robot, positions, :base_link, :tip, target, respect_limits: true)
 
       shoulder = Map.get(solved_positions, :shoulder_joint)
       elbow = Map.get(solved_positions, :elbow_joint)
@@ -281,7 +305,7 @@ defmodule BB.IK.DLSTest do
     test "solves position with 6-DOF arm", %{robot: robot, positions: positions} do
       target = Vec3.new(0.2, 0.2, 0.3)
 
-      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, solved_positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
 
       assert meta.residual < 0.02
       assert meta.orientation_residual == nil
@@ -297,7 +321,8 @@ defmodule BB.IK.DLSTest do
       target_quat = Quaternion.from_axis_angle(Vec3.unit_z(), :math.pi() / 4)
       target = {target_pos, {:quaternion, target_quat}}
 
-      assert {:ok, _solved_positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, _solved_positions, meta} =
+               DLS.solve(robot, positions, :base_link, :tip, target)
 
       assert meta.residual < 0.05
       assert is_float(meta.orientation_residual)
@@ -310,7 +335,7 @@ defmodule BB.IK.DLSTest do
           Quaternion.identity()
         )
 
-      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, _positions, meta} = DLS.solve(robot, positions, :base_link, :tip, target)
 
       assert is_float(meta.orientation_residual)
       assert meta.orientation_residual >= 0.0
@@ -327,14 +352,15 @@ defmodule BB.IK.DLSTest do
     test "does not check collisions by default", %{robot: robot, positions: positions} do
       target = Vec3.new(0.4, 0.0, 0.2)
 
-      assert {:ok, _solved_positions, _meta} = DLS.solve(robot, positions, :tip, target)
+      assert {:ok, _solved_positions, _meta} =
+               DLS.solve(robot, positions, :base_link, :tip, target)
     end
 
     test "succeeds when solution has no self-collision", %{robot: robot, positions: positions} do
       target = Vec3.new(0.4, 0.0, 0.2)
 
       assert {:ok, solved_positions, _meta} =
-               DLS.solve(robot, positions, :tip, target, check_collisions: true)
+               DLS.solve(robot, positions, :base_link, :tip, target, check_collisions: true)
 
       refute Collision.self_collision?(robot, solved_positions)
     end
@@ -346,7 +372,7 @@ defmodule BB.IK.DLSTest do
       target = Vec3.new(0.4, 0.0, 0.2)
 
       assert {:error, %SelfCollision{} = error} =
-               DLS.solve(robot, positions, :tip, target,
+               DLS.solve(robot, positions, :base_link, :tip, target,
                  check_collisions: true,
                  collision_margin: 1.0
                )
@@ -360,15 +386,102 @@ defmodule BB.IK.DLSTest do
       target = Vec3.new(0.35, 0.0, 0.15)
 
       assert {:ok, solved_positions, _meta} =
-               DLS.solve(robot, positions, :tip, target, check_collisions: true)
+               DLS.solve(robot, positions, :base_link, :tip, target, check_collisions: true)
 
       refute Collision.self_collision?(robot, solved_positions)
 
       assert {:error, %SelfCollision{}} =
-               DLS.solve(robot, positions, :tip, target,
+               DLS.solve(robot, positions, :base_link, :tip, target,
                  check_collisions: true,
                  collision_margin: 0.5
                )
+    end
+  end
+
+  # Damped least squares is a pseudo-inverse over whatever Jacobian it is handed,
+  # so a wider Jacobian should need no special case. These tests exist to prove
+  # that claim rather than assume it.
+  describe "chains containing a multi-DoF joint" do
+    setup do
+      %{
+        planar: PlanarBaseArm.robot(),
+        floating: FloatingBaseArm.robot()
+      }
+    end
+
+    test "reports the extra degrees of freedom in its column layout", %{planar: robot} do
+      assert Kinematics.jacobian_columns(robot, [:base, :shoulder_joint, :elbow_joint]) == [
+               {:base, 0},
+               {:base, 1},
+               {:base, 2},
+               {:shoulder_joint, 0},
+               {:elbow_joint, 0}
+             ]
+    end
+
+    test "solves a target the arm alone cannot reach, by driving the base", %{planar: robot} do
+      configurations = %{base: Transform2D.identity(), shoulder_joint: 0.0}
+
+      # The arm reaches 0.5m; this is 2m out, so the base must move.
+      target = Vec3.new(2.0, 0.0, 0.0)
+
+      assert {:ok, solved, meta} =
+               DLS.solve(robot, configurations, :odom, :tip, target, max_iterations: 400)
+
+      assert meta.reached, "expected convergence, residual was #{meta.residual}"
+      assert %Transform2D{} = solved.base
+
+      {x, y, z} = Kinematics.link_position(robot, solved, :tip)
+      assert_in_delta x, 2.0, 1.0e-3
+      assert_in_delta y, 0.0, 1.0e-3
+      assert_in_delta z, 0.0, 1.0e-3
+    end
+
+    test "leaves the planar configuration a Transform2D, not a float", %{planar: robot} do
+      configurations = %{base: Transform2D.identity(), shoulder_joint: 0.0}
+
+      assert {:ok, solved, _meta} =
+               DLS.solve(robot, configurations, :odom, :tip, Vec3.new(1.0, 0.5, 0.0),
+                 max_iterations: 400
+               )
+
+      assert %Transform2D{} = solved.base
+      assert is_float(solved.shoulder_joint)
+    end
+
+    test "solves through a floating base", %{floating: robot} do
+      configurations = %{base: Transform.identity(), gimbal: 0.0}
+      target = Vec3.new(1.0, 2.0, 3.0)
+
+      assert {:ok, solved, meta} =
+               DLS.solve(robot, configurations, :world, :lens, target, max_iterations: 400)
+
+      assert meta.reached, "expected convergence, residual was #{meta.residual}"
+      assert %Transform{} = solved.base
+
+      {x, y, z} = Kinematics.link_position(robot, solved, :lens)
+      assert_in_delta x, 1.0, 1.0e-3
+      assert_in_delta y, 2.0, 1.0e-3
+      assert_in_delta z, 3.0, 1.0e-3
+    end
+
+    # Scoping the chain past the multi-DoF joint is what lets a solver that cannot
+    # handle one still work on such a robot.
+    test "a chain scoped below the base contains no multi-DoF joint", %{planar: robot} do
+      assert Kinematics.jacobian_columns(robot, [:shoulder_joint, :elbow_joint]) == [
+               {:shoulder_joint, 0},
+               {:elbow_joint, 0}
+             ]
+
+      configurations = %{base: Transform2D.new(1.0, 0.0, 0.0), shoulder_joint: 0.0}
+
+      assert {:ok, solved, _meta} =
+               DLS.solve(robot, configurations, :base_link, :tip, Vec3.new(1.0, 0.5, 0.0),
+                 max_iterations: 400
+               )
+
+      # The base was not part of the problem, so it must come back untouched.
+      assert solved.base == Transform2D.new(1.0, 0.0, 0.0)
     end
   end
 end
