@@ -11,6 +11,13 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.5.0](https://github.com/beam-bots/bb_ik_dls/compare/v0.4.2...v0.5.0) (2026-08-04)
+### Breaking Changes:
+
+* solve chains containing multi-DoF joints (#75) by James Harton
+
+
+
 ## [v0.4.2](https://github.com/beam-bots/bb_ik_dls/compare/v0.4.1...v0.4.2) (2026-08-03)
 
 
