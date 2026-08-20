@@ -37,7 +37,11 @@ defmodule BB.IK.DLS.Tracker do
   - `:source_link` - Link the chain starts at (required, no default)
   - `:initial_target` - Starting target position (required)
   - `:update_rate` - Solve frequency in Hz (default: 20)
-  - `:delivery` - Actuator command delivery: `:direct` (default), `:pubsub`, `:sync`
+  - `:delivery` - Actuator command delivery. `:direct` (default) casts each
+    command and waits for nothing; `:pubsub` publishes it and waits for the
+    actuator to accept it, which blocks the loop for as long as that takes
+  - `:timeout` - How long to wait for each actuator under `:pubsub`, in
+    milliseconds (default 5000). Ignored under `:direct`
   - `:max_iterations` - Maximum DLS iterations per update (default: 100)
   - `:tolerance` - Convergence tolerance in metres (default: 1.0e-4)
   - `:lambda` - Damping factor (default: 0.5)
@@ -48,7 +52,8 @@ defmodule BB.IK.DLS.Tracker do
 
   ## Notes
 
-  - Uses `:direct` delivery by default for low latency
+  - Uses `:direct` delivery by default for low latency. Under `:pubsub` a solve
+    that outlives `:timeout` exits the tracker, as `GenServer.call/3` does
   - Continues tracking even if individual solves fail (best-effort)
   - Call `stop/1` to cleanly terminate tracking
   """
@@ -68,6 +73,7 @@ defmodule BB.IK.DLS.Tracker do
     :source_link,
     :target,
     :delivery,
+    :timeout,
     :solver_opts,
     :update_rate,
     :loop,
@@ -124,6 +130,7 @@ defmodule BB.IK.DLS.Tracker do
 
     update_rate = Keyword.get(opts, :update_rate, @default_update_rate)
     delivery = Keyword.get(opts, :delivery, @default_delivery)
+    timeout = Keyword.get(opts, :timeout)
 
     solver_opts =
       Keyword.take(opts, [
@@ -148,6 +155,7 @@ defmodule BB.IK.DLS.Tracker do
       source_link: source_link,
       target: initial_target,
       delivery: delivery,
+      timeout: timeout,
       solver_opts: solver_opts,
       update_rate: update_rate,
       loop:
@@ -211,6 +219,7 @@ defmodule BB.IK.DLS.Tracker do
       |> Keyword.put(:solver, DLS)
       |> Keyword.put(:source_link, state.source_link)
       |> Keyword.put(:delivery, state.delivery)
+      |> put_timeout(state.timeout)
 
     case Motion.move_to(state.robot_module, state.target_link, state.target, motion_opts) do
       {:ok, meta} ->
@@ -230,6 +239,9 @@ defmodule BB.IK.DLS.Tracker do
         %{state | last_meta: meta}
     end
   end
+
+  defp put_timeout(opts, nil), do: opts
+  defp put_timeout(opts, timeout), do: Keyword.put(opts, :timeout, timeout)
 
   defp send_hold_commands(state) do
     Enum.each(state.robot.actuators, fn {name, _info} ->
