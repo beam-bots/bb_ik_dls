@@ -178,6 +178,12 @@ defmodule BB.IK.DLS do
   Convenience function that calls `solve/6` and applies the result
   to the given `BB.Robot.State`.
 
+  Meant for a state of your own - one from `BB.Robot.State.new/1`, stepped
+  through a planned motion. A running robot's state belongs to its sensors,
+  which write it from `BB.Message.Sensor.JointState` messages, and writing a
+  solved configuration into it claims the joints have arrived somewhere they
+  have only been asked to go.
+
   ## Returns
 
   Same as `solve/6`, but on success the state's ETS table is updated.

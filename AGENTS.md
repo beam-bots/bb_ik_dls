@@ -32,7 +32,7 @@ lib/bb/ik/
 | `BB.IK.DLS` | Main entry point. Implements `BB.IK.Solver` behaviour. Provides `solve/6` and `solve_and_update/6` |
 | `BB.IK.DLS.Algorithm` | Core iteration using BB's analytical Jacobians and an Nx damped pseudoinverse update |
 | `BB.IK.DLS.Motion` | Wraps `BB.Motion` with DLS pre-configured. Convenience API for `move_to`, `solve`, and multi-target operations |
-| `BB.IK.DLS.Tracker` | GenServer for continuous position tracking at configurable update rates |
+| `BB.IK.DLS.Tracker` | GenServer for continuous position tracking at configurable update rates. Needs position feedback on the tracked joints — each solve seeds from the robot's configuration, which only `JointState` messages write |
 
 ## Build and Test Commands
 
@@ -96,7 +96,8 @@ Tests use robot fixtures from `test/support/test_robots.ex` (compiled via `elixi
 2. Position-only solves use `BB.Robot.Kinematics.position_jacobian/4`; orientation-constrained solves use `BB.Robot.Kinematics.jacobian/4`
 3. Adaptive damping adjusts λ by ×0.9 on error reduction, ×1.5 on increase
 4. Lambda is clamped to [1.0e-6, 100.0]
-5. The `Tracker` GenServer uses `:direct` delivery by default for low latency
+5. The `Tracker` GenServer uses `:direct` delivery by default for low latency;
+   under `:pubsub` each command is a blocking call, so a timeout exits the tracker
 
 ## Licensing headers
 

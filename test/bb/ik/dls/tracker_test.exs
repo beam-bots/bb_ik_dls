@@ -36,6 +36,11 @@ defmodule BB.IK.DLS.TrackerTest do
 
           actuator(:shoulder_servo, BB.IK.TestRobots.MockActuator)
 
+          sensor(
+            :shoulder_position,
+            {BB.Sensor.OpenLoopPositionEstimator, actuator: :shoulder_servo}
+          )
+
           link :link1 do
             joint :elbow_joint do
               type(:revolute)
@@ -55,6 +60,11 @@ defmodule BB.IK.DLS.TrackerTest do
               end
 
               actuator(:elbow_servo, BB.IK.TestRobots.MockActuator)
+
+              sensor(
+                :elbow_position,
+                {BB.Sensor.OpenLoopPositionEstimator, actuator: :elbow_servo}
+              )
 
               link :link2 do
                 joint :tip_joint do

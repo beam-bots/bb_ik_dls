@@ -50,6 +50,33 @@ defmodule BB.IK.DLS.Tracker do
   - `:respect_limits` - Whether to clamp to joint limits (default: true)
   - `:name` - Optional GenServer name for registration
 
+  ## Position feedback is a prerequisite
+
+  Every solve starts from the robot's current configuration, which is written
+  from `BB.Message.Sensor.JointState` messages and from nothing else - a
+  commanded position is not a measured one. A joint that nothing reports on
+  therefore stays at its initial configuration, and the tracker re-solves from
+  that same frozen pose on every tick.
+
+  That does not diverge: a solve is a function of its seed and its target, so a
+  frozen seed still yields an absolute joint configuration that reaches the
+  target. What it loses is the warm start, and with it the continuity between
+  ticks. Each solve pays the iteration count a distant seed needs rather than
+  the handful a nearby one does, and converges less reliably near singularities
+  - and because `:step_size` caps how far the configuration moves per iteration,
+  `:max_iterations` bounds how far the answer can travel from its seed at all.
+  The one that bites is that the answer stops depending on the path taken to
+  reach the target, which leaves the arm free to change solution branch from one
+  tick to the next: a redundant arm can be asked to swing between two equally
+  valid postures inside a single tick period.
+
+  So the tracked joints want something that reports where they are: an encoder,
+  a driver that declares `:position_feedback` through
+  `c:BB.Actuator.capabilities/1`, or `BB.Sensor.OpenLoopPositionEstimator`
+  interpolating from the actuator's own `BeginMotion` messages. `BB.Dsl` warns
+  at compile time about a driven joint with none of the three, and simulation
+  supplies an estimator itself.
+
   ## Notes
 
   - Uses `:direct` delivery by default for low latency. Under `:pubsub` a solve
