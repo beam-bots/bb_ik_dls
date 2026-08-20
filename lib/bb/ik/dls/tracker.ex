@@ -60,15 +60,15 @@ defmodule BB.IK.DLS.Tracker do
 
   use GenServer
 
+  require Logger
+
   alias BB.IK.DLS
   alias BB.Motion
   alias BB.Robot.Runtime
-  alias BB.Robot.State, as: RobotState
 
   defstruct [
     :robot_module,
     :robot,
-    :robot_state,
     :target_link,
     :source_link,
     :target,
@@ -111,7 +111,7 @@ defmodule BB.IK.DLS.Tracker do
   end
 
   @doc """
-  Stop tracking and return final positions.
+  Stop tracking and return the configuration the last solve arrived at.
 
   ## Options
 
@@ -145,12 +145,10 @@ defmodule BB.IK.DLS.Tracker do
       |> Keyword.reject(fn {_k, v} -> is_nil(v) end)
 
     robot = Runtime.get_robot(robot_module)
-    robot_state = Runtime.get_robot_state(robot_module)
 
     state = %__MODULE__{
       robot_module: robot_module,
       robot: robot,
-      robot_state: robot_state,
       target_link: target_link,
       source_link: source_link,
       target: initial_target,
@@ -213,19 +211,22 @@ defmodule BB.IK.DLS.Tracker do
     {:noreply, %{state | loop: loop}}
   end
 
+  # Solving and sending separately rather than through `BB.Motion.move_to/4`,
+  # because the tracker has to report the configuration it solved for and
+  # `move_to/4` keeps that to itself.
   defp do_solve_and_send(state) do
-    motion_opts =
+    solve_opts =
       state.solver_opts
       |> Keyword.put(:solver, DLS)
       |> Keyword.put(:source_link, state.source_link)
-      |> Keyword.put(:delivery, state.delivery)
-      |> put_timeout(state.timeout)
 
-    case Motion.move_to(state.robot_module, state.target_link, state.target, motion_opts) do
-      {:ok, meta} ->
+    case Motion.solve_only(state.robot_module, state.target_link, state.target, solve_opts) do
+      {:ok, positions, meta} ->
+        send_positions(state, positions)
+
         %{
           state
-          | last_positions: RobotState.get_all_configurations(state.robot_state),
+          | last_positions: positions,
             last_meta: meta,
             last_update: DateTime.utc_now()
         }
@@ -240,8 +241,22 @@ defmodule BB.IK.DLS.Tracker do
     end
   end
 
-  defp put_timeout(opts, nil), do: opts
-  defp put_timeout(opts, timeout), do: Keyword.put(opts, :timeout, timeout)
+  defp send_positions(state, positions) do
+    opts =
+      [delivery: state.delivery, timeout: state.timeout]
+      |> Keyword.reject(fn {_key, value} -> is_nil(value) end)
+
+    case Motion.send_positions(state.robot_module, positions, opts) do
+      :ok ->
+        :ok
+
+      {:error, error} ->
+        Logger.warning(
+          "Tracking #{inspect(state.target_link)} on #{inspect(state.robot_module)}: " <>
+            "actuator refused its position command: #{Exception.message(error)}"
+        )
+    end
+  end
 
   defp send_hold_commands(state) do
     Enum.each(state.robot.actuators, fn {name, _info} ->
