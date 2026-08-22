@@ -96,10 +96,24 @@ supervision tree; push new targets with `update_target/2`:
 
 ```elixir
 {:ok, pid} = BB.IK.DLS.Tracker.start_link(
-  robot: MyRobot.Robot, target_link: :gripper, initial_target: {0.3, 0.2, 0.1}, update_rate: 30
+  robot: MyRobot.Robot,
+  target_link: :gripper,
+  source_link: :base_link,
+  initial_target: {0.3, 0.2, 0.1},
+  update_rate: 30
 )
 BB.IK.DLS.Tracker.update_target(pid, {0.35, 0.25, 0.15})
 ```
+
+**Tracking needs position feedback on the tracked joints.** Each solve seeds
+from the robot's current configuration, and that is written from
+`BB.Message.Sensor.JointState` messages and from nothing else — a commanded
+position is not a measured one. Give the joints an encoder, a driver that
+declares `:position_feedback` through `c:BB.Actuator.capabilities/1`, or
+`BB.Sensor.OpenLoopPositionEstimator`; `bb` warns at compile time about a driven
+joint with none of the three. Without one the tracker re-solves from the same
+frozen pose every tick, which costs it its warm start and lets the arm change
+solution branch between ticks.
 
 ## Anti-patterns
 

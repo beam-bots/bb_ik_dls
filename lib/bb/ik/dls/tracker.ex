@@ -37,7 +37,11 @@ defmodule BB.IK.DLS.Tracker do
   - `:source_link` - Link the chain starts at (required, no default)
   - `:initial_target` - Starting target position (required)
   - `:update_rate` - Solve frequency in Hz (default: 20)
-  - `:delivery` - Actuator command delivery: `:direct` (default), `:pubsub`, `:sync`
+  - `:delivery` - Actuator command delivery. `:direct` (default) casts each
+    command and waits for nothing; `:pubsub` publishes it and waits for the
+    actuator to accept it, which blocks the loop for as long as that takes
+  - `:timeout` - How long to wait for each actuator under `:pubsub`, in
+    milliseconds (default 5000). Ignored under `:direct`
   - `:max_iterations` - Maximum DLS iterations per update (default: 100)
   - `:tolerance` - Convergence tolerance in metres (default: 1.0e-4)
   - `:lambda` - Damping factor (default: 0.5)
@@ -46,28 +50,57 @@ defmodule BB.IK.DLS.Tracker do
   - `:respect_limits` - Whether to clamp to joint limits (default: true)
   - `:name` - Optional GenServer name for registration
 
+  ## Position feedback is a prerequisite
+
+  Every solve starts from the robot's current configuration, which is written
+  from `BB.Message.Sensor.JointState` messages and from nothing else - a
+  commanded position is not a measured one. A joint that nothing reports on
+  therefore stays at its initial configuration, and the tracker re-solves from
+  that same frozen pose on every tick.
+
+  That does not diverge: a solve is a function of its seed and its target, so a
+  frozen seed still yields an absolute joint configuration that reaches the
+  target. What it loses is the warm start, and with it the continuity between
+  ticks. Each solve pays the iteration count a distant seed needs rather than
+  the handful a nearby one does, and converges less reliably near singularities
+  - and because `:step_size` caps how far the configuration moves per iteration,
+  `:max_iterations` bounds how far the answer can travel from its seed at all.
+  The one that bites is that the answer stops depending on the path taken to
+  reach the target, which leaves the arm free to change solution branch from one
+  tick to the next: a redundant arm can be asked to swing between two equally
+  valid postures inside a single tick period.
+
+  So the tracked joints want something that reports where they are: an encoder,
+  a driver that declares `:position_feedback` through
+  `c:BB.Actuator.capabilities/1`, or `BB.Sensor.OpenLoopPositionEstimator`
+  interpolating from the actuator's own `BeginMotion` messages. `BB.Dsl` warns
+  at compile time about a driven joint with none of the three, and simulation
+  supplies an estimator itself.
+
   ## Notes
 
-  - Uses `:direct` delivery by default for low latency
+  - Uses `:direct` delivery by default for low latency. Under `:pubsub` a solve
+    that outlives `:timeout` exits the tracker, as `GenServer.call/3` does
   - Continues tracking even if individual solves fail (best-effort)
   - Call `stop/1` to cleanly terminate tracking
   """
 
   use GenServer
 
+  require Logger
+
   alias BB.IK.DLS
   alias BB.Motion
   alias BB.Robot.Runtime
-  alias BB.Robot.State, as: RobotState
 
   defstruct [
     :robot_module,
     :robot,
-    :robot_state,
     :target_link,
     :source_link,
     :target,
     :delivery,
+    :timeout,
     :solver_opts,
     :update_rate,
     :loop,
@@ -105,7 +138,7 @@ defmodule BB.IK.DLS.Tracker do
   end
 
   @doc """
-  Stop tracking and return final positions.
+  Stop tracking and return the configuration the last solve arrived at.
 
   ## Options
 
@@ -124,6 +157,7 @@ defmodule BB.IK.DLS.Tracker do
 
     update_rate = Keyword.get(opts, :update_rate, @default_update_rate)
     delivery = Keyword.get(opts, :delivery, @default_delivery)
+    timeout = Keyword.get(opts, :timeout)
 
     solver_opts =
       Keyword.take(opts, [
@@ -138,16 +172,15 @@ defmodule BB.IK.DLS.Tracker do
       |> Keyword.reject(fn {_k, v} -> is_nil(v) end)
 
     robot = Runtime.get_robot(robot_module)
-    robot_state = Runtime.get_robot_state(robot_module)
 
     state = %__MODULE__{
       robot_module: robot_module,
       robot: robot,
-      robot_state: robot_state,
       target_link: target_link,
       source_link: source_link,
       target: initial_target,
       delivery: delivery,
+      timeout: timeout,
       solver_opts: solver_opts,
       update_rate: update_rate,
       loop:
@@ -205,18 +238,22 @@ defmodule BB.IK.DLS.Tracker do
     {:noreply, %{state | loop: loop}}
   end
 
+  # Solving and sending separately rather than through `BB.Motion.move_to/4`,
+  # because the tracker has to report the configuration it solved for and
+  # `move_to/4` keeps that to itself.
   defp do_solve_and_send(state) do
-    motion_opts =
+    solve_opts =
       state.solver_opts
       |> Keyword.put(:solver, DLS)
       |> Keyword.put(:source_link, state.source_link)
-      |> Keyword.put(:delivery, state.delivery)
 
-    case Motion.move_to(state.robot_module, state.target_link, state.target, motion_opts) do
-      {:ok, meta} ->
+    case Motion.solve_only(state.robot_module, state.target_link, state.target, solve_opts) do
+      {:ok, positions, meta} ->
+        send_positions(state, positions)
+
         %{
           state
-          | last_positions: RobotState.get_all_configurations(state.robot_state),
+          | last_positions: positions,
             last_meta: meta,
             last_update: DateTime.utc_now()
         }
@@ -228,6 +265,23 @@ defmodule BB.IK.DLS.Tracker do
         }
 
         %{state | last_meta: meta}
+    end
+  end
+
+  defp send_positions(state, positions) do
+    opts =
+      [delivery: state.delivery, timeout: state.timeout]
+      |> Keyword.reject(fn {_key, value} -> is_nil(value) end)
+
+    case Motion.send_positions(state.robot_module, positions, opts) do
+      :ok ->
+        :ok
+
+      {:error, error} ->
+        Logger.warning(
+          "Tracking #{inspect(state.target_link)} on #{inspect(state.robot_module)}: " <>
+            "actuator refused its position command: #{Exception.message(error)}"
+        )
     end
   end
 

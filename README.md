@@ -81,14 +81,14 @@ target = {Vec3.new(0.3, 0.2, 0.1), {:axis, Vec3.unit_z()}}
 
 ```elixir
 # Move end-effector using BB.Motion integration
-case BB.IK.DLS.Motion.move_to(MyRobot, :gripper, {0.3, 0.2, 0.1}) do
+case BB.IK.DLS.Motion.move_to(MyRobot, :gripper, {0.3, 0.2, 0.1}, source_link: :base_link) do
   {:ok, meta} -> IO.puts("Reached in #{meta.iterations} iterations")
-  {:error, reason, _meta} -> IO.puts("Failed: #{reason}")
+  {:error, error} -> IO.puts("Failed: #{Exception.message(error)}")
 end
 
 # Coordinated multi-limb motion
 targets = %{left_foot: {0.1, 0.0, 0.0}, right_foot: {-0.1, 0.0, 0.0}}
-BB.IK.DLS.Motion.move_to_multi(MyRobot, targets)
+BB.IK.DLS.Motion.move_to_multi(MyRobot, targets, source_link: :base_link)
 ```
 
 ### Continuous Tracking
@@ -98,6 +98,7 @@ BB.IK.DLS.Motion.move_to_multi(MyRobot, targets)
 {:ok, tracker} = BB.IK.DLS.Tracker.start_link(
   robot: MyRobot,
   target_link: :gripper,
+  source_link: :base_link,
   initial_target: {0.3, 0.2, 0.1},
   update_rate: 30
 )
