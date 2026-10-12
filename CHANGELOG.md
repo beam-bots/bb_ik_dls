@@ -11,6 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.6.1](https://github.com/beam-bots/bb_ik_dls/compare/v0.6.0...v0.6.1) (2026-10-12)
+
+
+
+
+### Bug Fixes:
+
+* follow core's actuator command delivery unification (#106) by James Harton
+
 ## [v0.6.0](https://github.com/beam-bots/bb_ik_dls/compare/v0.5.0...v0.6.0) (2026-08-22)
 ### Breaking Changes:
 
