@@ -104,6 +104,7 @@ defmodule BB.IK.DLS.TrackerTest do
   describe "stop/2" do
     test "returns the configuration the last solve arrived at, not the robot's" do
       start_supervised!(TrackerTestRobot)
+      notify_on_tracker_tick()
 
       {:ok, pid} =
         Tracker.start_link(
@@ -113,7 +114,7 @@ defmodule BB.IK.DLS.TrackerTest do
           initial_target: Vec3.new(0.35, 0.2, 0.0)
         )
 
-      Process.sleep(100)
+      assert_receive :tracker_ticked, 5_000
 
       assert {:ok, solved} = Tracker.stop(pid)
 
@@ -133,5 +134,27 @@ defmodule BB.IK.DLS.TrackerTest do
       {x, y, z} = Kinematics.link_position(TrackerTestRobot.robot(), solved, :tip)
       assert Vec3.distance(Vec3.new(x, y, z), Vec3.new(0.35, 0.2, 0.0)) < 0.01
     end
+  end
+
+  # `BB.Loop` emits nothing on its first tick, so the first event arrives at the
+  # start of the second - inside the tracker, after the first solve has finished.
+  defp notify_on_tracker_tick do
+    handler_id = "dls-tracker-test-#{System.unique_integer([:positive])}"
+    test_pid = self()
+
+    :telemetry.attach(
+      handler_id,
+      [:bb, :loop, :tick],
+      fn
+        _event, _measurements, %{robot: TrackerTestRobot, path: [:ik_tracker, :tip]}, _config ->
+          send(test_pid, :tracker_ticked)
+
+        _event, _measurements, _metadata, _config ->
+          :ok
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
   end
 end
